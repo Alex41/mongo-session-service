@@ -12,6 +12,7 @@ type SessionService interface {
 	DeleteAllSessionsExceptThis(string /*secret*/, uint64, context.Context) error
 	DeleteSessionBySecret(string, context.Context) (Session, error)
 	DeleteSessionByID(string, uint64, context.Context) (Session, error)
+	DeleteSessionsByUser(uint64, context.Context) error
 	GetSessionsByUser(uint64, context.Context) ([]Session, error)
 	GetLastEnterByUser(uint64, context.Context) (time.Time, error)
 	GetSessionBySecret(string, context.Context) (Session, error)

@@ -19,6 +19,12 @@ type mongoImpl struct {
 	last *mongo.Collection
 }
 
+func (u *mongoImpl) DeleteSessionsByUser(userID uint64, ctx context.Context) error {
+	filter := m{"user_id": userID}
+	_, err := u.sess.DeleteMany(ctx, filter)
+	return err
+}
+
 type lastEnter struct {
 	UserID    uint64    `bson:"_id"`
 	LastEnter time.Time `bson:"last_enter"`
