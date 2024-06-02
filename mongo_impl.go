@@ -14,12 +14,14 @@ var (
 	upsert = options.Update().SetUpsert(true)
 )
 
-type mongoImpl struct {
+//goland:noinspection GoSnakeCaseUsage
+type mongoImpl[ID, USER_ID comparable] struct {
 	sess *mongo.Collection
 	last *mongo.Collection
 }
 
-func (u *mongoImpl) DeleteSessionsByUser(userID uint64, ctx context.Context) error {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) DeleteSessionsByUser(ctx context.Context, userID USER_ID) error {
 	filter := m{"user_id": userID}
 	_, err := u.sess.DeleteMany(ctx, filter)
 	return err
@@ -32,28 +34,37 @@ type lastEnter struct {
 
 type m bson.M
 
-func (u *mongoImpl) GetSessionsByUser(userId uint64, c context.Context) (s []Session, _ error) {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetSessionsByUser(ctx context.Context, userId USER_ID) (s []Session[ID, USER_ID], _ error) {
 	filter := m{"user_id": userId}
 
-	cur, err := u.sess.Find(c, filter)
+	cur, err := u.sess.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
 	//goland:noinspection GoUnhandledErrorResult
-	defer cur.Close(c)
+	defer cur.Close(ctx)
 
-	err = cur.All(c, &s)
+	err = cur.All(ctx, &s)
 
 	return s, err
 }
-func (u *mongoImpl) DeleteAllSessionsExceptThis(secret string, uID uint64, ctx context.Context) error {
-	filter := m{"user_id": uID, "secret": m{"$ne": secret}}
-	_, err := u.sess.DeleteMany(ctx, filter)
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) DeleteAllSessionsExceptThis(ctx context.Context, id ID) error {
+	session, err := u.getByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	filter := m{"user_id": session.UserID, "secret": m{"$ne": session.Secret}}
+	_, err = u.sess.DeleteMany(ctx, filter)
 	return err
 }
 
-func (u *mongoImpl) GetLastEnterByUser(userId uint64, ctx context.Context) (time.Time, error) {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetLastEnterByUser(ctx context.Context, userId USER_ID) (time.Time, error) {
 	filter := m{"_id": userId}
 
 	var result lastEnter
@@ -62,14 +73,15 @@ func (u *mongoImpl) GetLastEnterByUser(userId uint64, ctx context.Context) (time
 	return result.LastEnter, err
 }
 
-func (u *mongoImpl) CreateSession(session Session, ctx context.Context) error {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) CreateSession(ctx context.Context, session Session[ID, USER_ID]) error {
 	if session.IP == nil {
 		session.IP = make([]string, 0)
 	}
 	_, e1 := u.sess.InsertOne(ctx, session)
 
 	_, e2 := u.last.UpdateOne(ctx,
-		m{"_id": session.UserId},
+		m{"_id": session.UserID},
 		m{"$set": m{"last_enter": time.Now()}},
 		upsert,
 	)
@@ -77,10 +89,11 @@ func (u *mongoImpl) CreateSession(session Session, ctx context.Context) error {
 	return searchNotNil(e1, e2)
 }
 
-func (u *mongoImpl) UpdateSession(session Session, ctx context.Context) error {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) UpdateSession(ctx context.Context, session Session[ID, USER_ID]) error {
 
 	filter1 := m{"_id": session.ID}
-	filter2 := m{"_id": session.UserId}
+	filter2 := m{"_id": session.UserID}
 
 	update1 := m{"$set": m{"user_agent": session.UserAgent, "last_usage": session.LastUsage}}
 	update2 := m{"$set": m{"last_enter": time.Now()}}
@@ -91,11 +104,28 @@ func (u *mongoImpl) UpdateSession(session Session, ctx context.Context) error {
 	return searchNotNil(err1, err2)
 }
 
-func (u *mongoImpl) AddUniqueIP(userID uint64, sessionID string, ip string, ctx context.Context) error {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) getByID(ctx context.Context, id ID) (session Session[ID, USER_ID], e error) {
+	sessionIDFilter := m{"_id": id}
+
+	e = u.sess.FindOne(ctx, sessionIDFilter).Decode(&session)
+	if errors.Is(e, mongo.ErrNoDocuments) {
+		e = SessionNotFound
+	}
+
+	return
+}
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) AddUniqueIP(ctx context.Context, id ID, ip string) error {
+	session, err := u.getByID(ctx, id)
+	if err != nil {
+		return err
+	}
 
 	var (
-		filter1 = m{"_id": sessionID}
-		filter2 = m{"_id": userID}
+		filter1 = m{"_id": session.ID}
+		filter2 = m{"_id": session.UserID}
 		update  = m{"$addToSet": m{"ip": ip}}
 	)
 
@@ -104,7 +134,8 @@ func (u *mongoImpl) AddUniqueIP(userID uint64, sessionID string, ip string, ctx 
 	return searchNotNil(e1, e2)
 }
 
-func (u *mongoImpl) DeleteSessionBySecret(secret string, ctx context.Context) (s Session, e error) {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) DeleteSessionBySecret(ctx context.Context, secret string) (s Session[ID, USER_ID], e error) {
 	res := u.sess.FindOneAndDelete(ctx, m{"secret": secret})
 	if res.Err() != nil {
 		return s, res.Err()
@@ -114,8 +145,9 @@ func (u *mongoImpl) DeleteSessionBySecret(secret string, ctx context.Context) (s
 	return
 }
 
-func (u *mongoImpl) DeleteSessionByID(id string, uID uint64, ctx context.Context) (s Session, e error) {
-	filter := m{"user_id": uID, "_id": id}
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) DeleteSessionByID(ctx context.Context, id ID) (s Session[ID, USER_ID], e error) {
+	filter := m{"_id": id}
 	res := u.sess.FindOneAndDelete(ctx, filter)
 	if res.Err() != nil {
 		return s, res.Err()
@@ -125,7 +157,8 @@ func (u *mongoImpl) DeleteSessionByID(id string, uID uint64, ctx context.Context
 	return
 }
 
-func (u *mongoImpl) GetSessionBySecret(secret string, ctx context.Context) (s Session, e error) {
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetSessionBySecret(ctx context.Context, secret string) (s Session[ID, USER_ID], e error) {
 	e = u.sess.FindOne(ctx, m{"secret": secret}).Decode(&s)
 	if errors.Is(e, mongo.ErrNoDocuments) {
 		e = SessionNotFound
@@ -133,8 +166,9 @@ func (u *mongoImpl) GetSessionBySecret(secret string, ctx context.Context) (s Se
 	return
 }
 
-func MongoImpl(db *mongo.Database, c context.Context) (SessionService, error) {
-	u := &mongoImpl{
+//goland:noinspection GoSnakeCaseUsage
+func MongoImpl[ID, USER_ID comparable](db *mongo.Database, c context.Context) (SessionService[ID, USER_ID], error) {
+	u := &mongoImpl[ID, USER_ID]{
 		sess: db.Collection("session"),
 		last: db.Collection("last_enter"),
 	}
