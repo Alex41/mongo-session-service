@@ -167,7 +167,7 @@ func (u *mongoImpl[ID, USER_ID]) GetSessionBySecret(ctx context.Context, secret 
 }
 
 //goland:noinspection GoSnakeCaseUsage
-func MongoImpl[ID, USER_ID comparable](db *mongo.Database, c context.Context) (SessionService[ID, USER_ID], error) {
+func MongoImpl[ID, USER_ID comparable](c context.Context, db *mongo.Database) (SessionService[ID, USER_ID], error) {
 	u := &mongoImpl[ID, USER_ID]{
 		sess: db.Collection("session"),
 		last: db.Collection("last_enter"),
