@@ -232,6 +232,24 @@ func (u *mongoImpl[ID, USER_ID]) GetAllTokensByUserAndService(ctx context.Contex
 }
 
 //goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) RemoveTokenFromSession(ctx context.Context, id ID, service, token string) error {
+	filter := m{
+		"_id": id,
+	}
+
+	update := m{
+		"$pull": m{
+			"tokens." + service: m{
+				"value": token,
+			},
+		},
+	}
+
+	_, err := u.sess.UpdateOne(ctx, filter, update)
+	return err
+}
+
+//goland:noinspection GoSnakeCaseUsage
 func MongoImpl[ID, USER_ID comparable](c context.Context, db *mongo.Database) (SessionService[ID, USER_ID], error) {
 	u := &mongoImpl[ID, USER_ID]{
 		sess: db.Collection("session"),

@@ -20,6 +20,7 @@ type SessionService[ID, USER_ID comparable] interface {
 	AddUniqueIP(_ context.Context, _ ID, ip string) error
 
 	AppendUniqueTokenToSession(_ context.Context, _ ID, service, token string) error
+	RemoveTokenFromSession(_ context.Context, _ ID, service, token string) error
 	GetAllTokensByUserAndService(_ context.Context, _ USER_ID, service string) ([]AdditionalToken, error)
 }
 
