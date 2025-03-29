@@ -198,37 +198,34 @@ func (u *mongoImpl[ID, USER_ID]) AppendUniqueTokenToSession(ctx context.Context,
 }
 
 //goland:noinspection GoSnakeCaseUsage
-func (u *mongoImpl[ID, USER_ID]) GetAllTokensByUserAndService(ctx context.Context, userID USER_ID, service string) ([]AdditionalToken, error) {
+func (u *mongoImpl[ID, USER_ID]) GetAllTokensByUserAndService(
+	ctx context.Context,
+	userID USER_ID,
+	service string,
+) (tokens []AdditionalToken, err error) {
+
 	filter := m{
 		"user_id":           userID,
 		"tokens." + service: m{"$exists": true},
 	}
-	projection := m{
-		"tokens." + service: 1,
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$project", Value: m{"tokens": "$tokens." + service}}},
+		{{Key: "$unwind", Value: "$tokens"}},
+		{{Key: "$replaceRoot", Value: m{"newRoot": "$tokens"}}},
 	}
 
-	cur, err := u.sess.Find(ctx, filter, options.Find().SetProjection(projection))
+	cur, err := u.sess.Aggregate(ctx, pipeline)
 	if err != nil {
-		return nil, err
+		return
 	}
+
 	defer cur.Close(ctx)
 
-	var result []struct {
-		Tokens map[string][]AdditionalToken `bson:"tokens"`
-	}
+	err = cur.All(ctx, &tokens)
 
-	if err := cur.All(ctx, &result); err != nil {
-		return nil, err
-	}
-
-	var tokens []AdditionalToken
-	for _, r := range result {
-		if list, ok := r.Tokens[service]; ok {
-			tokens = append(tokens, list...)
-		}
-	}
-
-	return tokens, nil
+	return
 }
 
 //goland:noinspection GoSnakeCaseUsage
