@@ -38,7 +38,10 @@ type m bson.M
 func (u *mongoImpl[ID, USER_ID]) GetSessionsByUser(ctx context.Context, userId USER_ID) (s []Session[ID, USER_ID], _ error) {
 	filter := m{"user_id": userId}
 
-	cur, err := u.sess.Find(ctx, filter)
+	cur, err := u.sess.Find(
+		ctx, filter,
+		options.Find().SetProjection(m{"secret": 0}),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +89,7 @@ func (u *mongoImpl[ID, USER_ID]) CreateSession(ctx context.Context, session Sess
 		upsert,
 	)
 
-	return searchNotNil(e1, e2)
+	return errors.Join(e1, e2)
 }
 
 //goland:noinspection GoSnakeCaseUsage
@@ -101,7 +104,7 @@ func (u *mongoImpl[ID, USER_ID]) UpdateSession(ctx context.Context, session Sess
 	_, err1 := u.sess.UpdateOne(ctx, filter1, update1)
 	_, err2 := u.last.UpdateOne(ctx, filter2, update2)
 
-	return searchNotNil(err1, err2)
+	return errors.Join(err1, err2)
 }
 
 //goland:noinspection GoSnakeCaseUsage
@@ -131,7 +134,8 @@ func (u *mongoImpl[ID, USER_ID]) AddUniqueIP(ctx context.Context, id ID, ip stri
 
 	_, e1 := u.sess.UpdateOne(ctx, filter1, update)
 	_, e2 := u.last.UpdateOne(ctx, filter2, update)
-	return searchNotNil(e1, e2)
+
+	return errors.Join(e1, e2)
 }
 
 //goland:noinspection GoSnakeCaseUsage
@@ -159,11 +163,72 @@ func (u *mongoImpl[ID, USER_ID]) DeleteSessionByID(ctx context.Context, id ID) (
 
 //goland:noinspection GoSnakeCaseUsage
 func (u *mongoImpl[ID, USER_ID]) GetSessionBySecret(ctx context.Context, secret string) (s Session[ID, USER_ID], e error) {
-	e = u.sess.FindOne(ctx, m{"secret": secret}).Decode(&s)
+	e = u.sess.FindOne(
+		ctx,
+		m{"secret": secret},
+		options.FindOne().SetProjection(m{"secret": 0}),
+	).Decode(&s)
 	if errors.Is(e, mongo.ErrNoDocuments) {
 		e = SessionNotFound
 	}
 	return
+}
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) AppendUniqueTokenToSession(ctx context.Context, id ID, service, token string) error {
+	filter := m{
+		"_id": id,
+		// check if token not exist
+		"tokens." + service + ".value": m{
+			"$ne": token,
+		},
+	}
+
+	update := m{
+		"$push": m{
+			"tokens." + service: AdditionalToken{
+				Value:     token,
+				CreatedAt: time.Now(),
+			},
+		},
+	}
+
+	_, err := u.sess.UpdateOne(ctx, filter, update)
+	return err
+}
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetAllTokensByUserAndService(ctx context.Context, userID USER_ID, service string) ([]AdditionalToken, error) {
+	filter := m{
+		"user_id":           userID,
+		"tokens." + service: m{"$exists": true},
+	}
+	projection := m{
+		"tokens." + service: 1,
+	}
+
+	cur, err := u.sess.Find(ctx, filter, options.Find().SetProjection(projection))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+
+	var result []struct {
+		Tokens map[string][]AdditionalToken `bson:"tokens"`
+	}
+
+	if err := cur.All(ctx, &result); err != nil {
+		return nil, err
+	}
+
+	var tokens []AdditionalToken
+	for _, r := range result {
+		if list, ok := r.Tokens[service]; ok {
+			tokens = append(tokens, list...)
+		}
+	}
+
+	return tokens, nil
 }
 
 //goland:noinspection GoSnakeCaseUsage
@@ -176,5 +241,5 @@ func MongoImpl[ID, USER_ID comparable](c context.Context, db *mongo.Database) (S
 	_, e1 := u.sess.Indexes().CreateOne(c, mongo.IndexModel{Keys: m{"secret": 1}, Options: unique})
 	_, e2 := u.sess.Indexes().CreateOne(c, mongo.IndexModel{Keys: m{"user_id": 1}})
 
-	return u, searchNotNil(e1, e2)
+	return u, errors.Join(e1, e2)
 }
