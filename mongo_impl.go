@@ -81,6 +81,10 @@ func (u *mongoImpl[ID, USER_ID]) CreateSession(ctx context.Context, session Sess
 	if session.IP == nil {
 		session.IP = make([]string, 0)
 	}
+	if session.Tokens == nil {
+		session.Tokens = make(map[string][]AdditionalToken)
+	}
+
 	_, e1 := u.sess.InsertOne(ctx, session)
 
 	_, e2 := u.last.UpdateOne(ctx,
