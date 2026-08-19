@@ -202,6 +202,16 @@ func (u *mongoImpl[ID, USER_ID]) AppendUniqueTokenToSession(ctx context.Context,
 }
 
 //goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) SetAdditionalData(ctx context.Context, id ID, key, value string) error {
+	_, err := u.sess.UpdateOne(ctx,
+		m{"_id": id},
+		m{"$set": m{"additional_data." + key: value}},
+	)
+
+	return err
+}
+
+//goland:noinspection GoSnakeCaseUsage
 func (u *mongoImpl[ID, USER_ID]) GetAllTokensByUserAndService(
 	ctx context.Context,
 	userID USER_ID,

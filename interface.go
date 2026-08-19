@@ -22,6 +22,12 @@ type SessionService[ID, USER_ID comparable] interface {
 	AppendUniqueTokenToSession(_ context.Context, _ ID, service, token string) error
 	RemoveTokenFromSession(_ context.Context, _ ID, service, token string) error
 	GetAllTokensByUserAndService(_ context.Context, _ USER_ID, service string) ([]AdditionalToken, error)
+
+	// SetAdditionalData writes one AdditionalData key on an existing session.
+	// It updates that key alone rather than rewriting the session, so two
+	// concurrent writers setting different keys cannot lose each other's work
+	// the way a read-modify-write through UpdateSession would.
+	SetAdditionalData(_ context.Context, _ ID, key, value string) error
 }
 
 //goland:noinspection GoSnakeCaseUsage
@@ -35,6 +41,14 @@ type Session[ID, USER_ID comparable] struct {
 	AuthMethod string    `json:"am" bson:"auth_method"`
 
 	Tokens map[string][]AdditionalToken `json:"-" bson:"tokens"`
+
+	// AdditionalData carries caller-defined facts about the session that do
+	// not warrant a field of their own. Unlike Tokens it is a flat key/value
+	// map, so it suits things there is exactly one of per key - a timestamp,
+	// a flag, an identifier - rather than an accumulating list.
+	//
+	// It is nil on sessions written before it existed, so read it defensively.
+	AdditionalData map[string]string `json:"-" bson:"additional_data"`
 }
 
 type AdditionalToken struct {
