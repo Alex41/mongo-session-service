@@ -48,7 +48,12 @@ type Session[ID, USER_ID comparable] struct {
 	// a flag, an identifier - rather than an accumulating list.
 	//
 	// It is nil on sessions written before it existed, so read it defensively.
-	AdditionalData map[string]string `json:"-" bson:"additional_data"`
+	// omitempty matters: a nil map would otherwise be stored as null, and
+	// Mongo refuses to $set a field inside a null - so the first
+	// SetAdditionalData on a freshly created session would fail. Omitting it
+	// instead lets $set create the object, which also means documents written
+	// before this field existed need no migration.
+	AdditionalData map[string]string `json:"-" bson:"additional_data,omitempty"`
 }
 
 type AdditionalToken struct {
