@@ -1,0 +1,58 @@
+name: CI
+
+# Every push to main that carries a releasing commit (see .releaserc.json)
+# tags the next vX.Y.Z and publishes a GitHub release; Go consumers resolve
+# the tag.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      # mongo:8 refuses to start on some recent kernels (SERVER-121912).
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go vet ./...
+
+      - run: go test -count=1 -race ./...
+        env:
+          MONGO_URI: mongodb://localhost:27017
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npx --yes semantic-release@24.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
