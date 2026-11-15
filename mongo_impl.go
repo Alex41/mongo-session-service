@@ -166,16 +166,42 @@ func (u *mongoImpl[ID, USER_ID]) DeleteSessionByID(ctx context.Context, id ID) (
 }
 
 //goland:noinspection GoSnakeCaseUsage
-func (u *mongoImpl[ID, USER_ID]) GetSessionBySecret(ctx context.Context, secret string) (s Session[ID, USER_ID], e error) {
+func (u *mongoImpl[ID, USER_ID]) GetSessionBySecret(ctx context.Context, secret string) (Session[ID, USER_ID], error) {
+	return u.GetSessionBySecretOfKind(ctx, "", secret)
+}
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetSessionBySecretOfKind(ctx context.Context, kind Kind, secret string) (s Session[ID, USER_ID], e error) {
 	e = u.sess.FindOne(
 		ctx,
-		m{"secret": secret},
+		m{"secret": secret, "kind": kindFilter(kind)},
 		options.FindOne().SetProjection(m{"secret": 0}),
 	).Decode(&s)
 	if errors.Is(e, mongo.ErrNoDocuments) {
 		e = SessionNotFound
 	}
 	return
+}
+
+//goland:noinspection GoSnakeCaseUsage
+func (u *mongoImpl[ID, USER_ID]) GetSessionByID(ctx context.Context, id ID) (s Session[ID, USER_ID], e error) {
+	e = u.sess.FindOne(
+		ctx,
+		m{"_id": id},
+		options.FindOne().SetProjection(m{"secret": 0}),
+	).Decode(&s)
+	if errors.Is(e, mongo.ErrNoDocuments) {
+		e = SessionNotFound
+	}
+	return
+}
+
+// kindFilter: an empty Kind is never stored, and null matches a missing field.
+func kindFilter(kind Kind) any {
+	if kind == "" {
+		return nil
+	}
+	return kind
 }
 
 //goland:noinspection GoSnakeCaseUsage

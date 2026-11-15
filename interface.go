@@ -16,7 +16,11 @@ type SessionService[ID, USER_ID comparable] interface {
 	DeleteSessionsByUser(context.Context, USER_ID) error
 	GetSessionsByUser(context.Context, USER_ID) ([]Session[ID, USER_ID], error)
 	GetLastEnterByUser(context.Context, USER_ID) (time.Time, error)
+	// GetSessionBySecret finds only a session without a Kind, so a secret
+	// issued with one never passes a gate that doesn't ask for it.
 	GetSessionBySecret(context.Context, string) (Session[ID, USER_ID], error)
+	GetSessionBySecretOfKind(_ context.Context, _ Kind, secret string) (Session[ID, USER_ID], error)
+	GetSessionByID(context.Context, ID) (Session[ID, USER_ID], error)
 	AddUniqueIP(_ context.Context, _ ID, ip string) error
 
 	AppendUniqueTokenToSession(_ context.Context, _ ID, service, token string) error
@@ -40,6 +44,11 @@ type Session[ID, USER_ID comparable] struct {
 	UserAgent  string    `json:"ua" bson:"user_agent"`
 	AuthMethod string    `json:"am" bson:"auth_method"`
 
+	// Kind is what the secret is presented as; its values belong to the
+	// caller. Empty is stored as absent, so it also matches documents written
+	// before the field existed.
+	Kind Kind `json:"kind" bson:"kind,omitempty"`
+
 	Tokens map[string][]AdditionalToken `json:"-" bson:"tokens"`
 
 	// AdditionalData carries caller-defined facts about the session that do
@@ -55,6 +64,8 @@ type Session[ID, USER_ID comparable] struct {
 	// before this field existed need no migration.
 	AdditionalData map[string]string `json:"-" bson:"additional_data,omitempty"`
 }
+
+type Kind string
 
 type AdditionalToken struct {
 	Value     string    `bson:"value"`
